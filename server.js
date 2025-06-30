@@ -12,41 +12,30 @@ const morgan = require('morgan');
 
 const app = express();
 
-// Trust proxy for proper IP detection behind load balancers (important for Koyeb)
-app.set('trust proxy', 1);
-
 // Connect to MongoDB
 connectDB();
+
+// Trust proxy for correct IP detection (important for Koyeb, Vercel etc.)
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per window
-  standardHeaders: true,
-  legacyHeaders: false
+  windowMs: 15 * 60 * 1000, 
+  max: 100 
 });
 app.use(limiter);
 
 // Logging
 app.use(morgan('dev'));
 
-// CORS Configuration - Allow multiple origins for dev & production
-const allowedOrigins = [
-  'http://localhost:3000', // Dev frontend
-  'https://nutri-c.vercel.app' // Vercel frontend
-];
+// CORS Configuration for Vercel frontend only
+const frontendUrl = 'https://nutri-c.vercel.app';
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS Not Allowed'));
-    }
-  },
+  origin: frontendUrl,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -63,13 +52,13 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Serve static files from uploads with proper headers
+// Serve static files from uploads with correct CORS headers
 app.use('/uploads', express.static(uploadDir, {
-  setHeaders: (res, filePath) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // For image loading across domains
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', frontendUrl);
+    res.set('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 }));
 
@@ -77,7 +66,7 @@ app.use('/uploads', express.static(uploadDir, {
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/bmi', bmiRoutes);
 
-// Health check
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
@@ -118,5 +107,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`Uploads directory: ${uploadDir}`);
-  console.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+  console.log(`CORS allowed origin: ${frontendUrl}`);
 });
