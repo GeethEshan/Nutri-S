@@ -9,11 +9,24 @@ const analysisController = require('../controllers/analysisController');
 
 console.log('[ROUTES] Initializing analysis routes...');
 
-// Configure Google Cloud Vision client
-const visionClient = new ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '../service-account.json'),
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
-});
+// Load credentials from environment variable
+let visionClient;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  visionClient = new ImageAnnotatorClient({
+    credentials: {
+      client_email: credentials.client_email,
+      private_key: credentials.private_key
+    },
+    projectId: credentials.project_id
+  });
+} else {
+  // Fallback to file if no env provided (useful for local dev)
+  visionClient = new ImageAnnotatorClient({
+    keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '../service-account.json'),
+    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
+  });
+}
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, '../uploads');
@@ -42,7 +55,7 @@ const fileFilter = (req, file, cb) => {
   const filetypes = /jpeg|jpg|png/;
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = filetypes.test(file.mimetype);
-  
+
   if (mimetype && extname) {
     console.log('[MULTER] File accepted');
     return cb(null, true);
@@ -52,12 +65,12 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ 
+const upload = multer({
   storage,
   fileFilter,
-  limits: { 
+  limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1 
+    files: 1
   }
 });
 
@@ -75,7 +88,7 @@ const handleMulterErrors = (err, req, res, next) => {
 };
 
 // POST endpoint for image analysis
-router.post('/analyze', 
+router.post('/analyze',
   upload.single('image'),
   handleMulterErrors,
   async (req, res, next) => {
@@ -86,30 +99,30 @@ router.post('/analyze',
 
       console.log('[ROUTE] POST /api/analysis/analyze received');
       console.log(`[ROUTE] Processing file: ${req.file.path}`);
-      
+
       // Validate the image file
       const imagePath = req.file.path;
       try {
-        await sharp(imagePath).metadata(); // Basic validation
+        await sharp(imagePath).metadata();
       } catch (err) {
         console.error('Image validation error:', err);
         await fs.promises.unlink(imagePath).catch(console.error);
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Invalid or corrupted image file' 
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or corrupted image file'
         });
       }
 
-      // Process with controller
-      analysisController.analyzeMeal(req, res, next);
-      
+      // Inject visionClient into controller if needed
+      analysisController.analyzeMeal(req, res, next, visionClient);
+
     } catch (error) {
       console.error('Server error:', error);
       if (req.file) {
         await fs.promises.unlink(req.file.path).catch(console.error);
       }
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         message: 'Internal server error',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
@@ -120,7 +133,7 @@ router.post('/analyze',
 // GET endpoint for testing
 router.get('/test', (req, res) => {
   console.log('[ROUTE] GET /api/analysis/test received');
-  res.json({ 
+  res.json({
     success: true,
     message: 'Analysis route working!',
     timestamp: new Date().toISOString()
