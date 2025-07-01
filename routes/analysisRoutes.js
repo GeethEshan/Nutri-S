@@ -16,7 +16,8 @@ const uploadDir = path.join(__dirname, '../uploads');
 // Ensure service account file exists (for cloud environments)
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
   try {
-    fs.writeFileSync(serviceAccountPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    const parsed = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON); 
+    fs.writeFileSync(serviceAccountPath, JSON.stringify(parsed, null, 2));
     console.log('[CONFIG] Service account JSON written to file.');
   } catch (err) {
     console.error('[CONFIG] Failed to write service account file:', err);
